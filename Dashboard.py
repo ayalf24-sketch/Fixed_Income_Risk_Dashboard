@@ -2,8 +2,8 @@
 Fixed Income Portfolio Dashboard
 ================================
 Visualizes portfolio summary, treasury yield curves (historical + current),
-and scenario testing (parallel shifts, steepener / flattener, custom tenor bumps)
-with live P&L recompute.
+scenario testing (parallel shifts, steepener / flattener, custom tenor bumps)
+with live P&L recompute, AND historical VaR / CVaR / monthly P&L distribution.
 
 How to run
 ----------
@@ -180,6 +180,14 @@ def fetch_treasury():
 
 
 @st.cache_data(ttl=24 * 3600, show_spinner=False)
+def fetch_yield_history():
+    """Pull full FRED history for the 4 tenors — used for VaR / CVaR."""
+    fred = Fred(api_key=FRED_API_KEY)
+    df = pd.DataFrame({name: fred.get_series(sid) for name, sid in FRED_SERIES.items()})
+    return df.ffill().dropna(subset=["2Y", "10Y"]).loc["2000-01-01":]
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
 def build_portfolio():
     treasury = fetch_treasury()
     rows = []
@@ -232,6 +240,51 @@ def compute_risk(portfolio: pd.DataFrame) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Historical VaR / CVaR engine
+# ─────────────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def compute_historical_pnl(portfolio: pd.DataFrame) -> pd.DataFrame:
+    """
+    Re-applies each historical 1-month change in the 2Y/5Y/10Y/30Y yields
+    to today's portfolio and returns a DataFrame of month-by-month P&L.
+    Mirrors the logic in mockPortfolio.py's VaR section.
+    """
+    yields = fetch_yield_history()
+    monthly_changes = yields.resample("ME").last().diff().dropna()
+
+    bond_specs = []
+    for tk, row in portfolio.iterrows():
+        bond_specs.append({
+            "ticker": tk,
+            "mat": row["Maturity"],
+            "T": MATURITY_MAP[row["Maturity"]],
+            "face": float(row["Face Value"]),
+            "cpn": float(row["Coupon (%)"]),
+            "ytm": float(row["YTM (%)"]),
+        })
+
+    rows = []
+    for date, shock_row in monthly_changes.iterrows():
+        pnl = 0.0
+        for b in bond_specs:
+            dy = shock_row[b["mat"]]
+            base_p = bond_price(b["face"], b["cpn"], b["ytm"], b["T"])
+            shocked = bond_price(b["face"], b["cpn"], b["ytm"] + dy, b["T"])
+            pnl += shocked - base_p
+        rows.append({"Date": date, "PnL": pnl})
+
+    return pd.DataFrame(rows).set_index("Date")
+
+
+def var_cvar(pnl_series: pd.Series, conf: float = 0.95):
+    """Returns (VaR, CVaR) at the given confidence level. Both are negative numbers for losses."""
+    pct = (1 - conf) * 100  # e.g. 95% conf → 5th percentile
+    var = float(np.percentile(pnl_series, pct))
+    cvar = float(pnl_series[pnl_series <= var].mean())
+    return var, cvar
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Scenario engine
 # ─────────────────────────────────────────────────────────────────────────────
 def apply_scenario(portfolio: pd.DataFrame, parallel_bp: float,
@@ -276,7 +329,7 @@ def apply_scenario(portfolio: pd.DataFrame, parallel_bp: float,
 # UI
 # ─────────────────────────────────────────────────────────────────────────────
 st.title("📊 Fixed Income Portfolio Dashboard")
-st.caption("Treasury exposure, scenario testing, and live P&L across the curve.")
+st.caption("Treasury exposure, scenario testing, live P&L, and historical VaR / CVaR.")
 
 # Load data
 try:
@@ -285,6 +338,15 @@ try:
 except Exception as exc:
     st.error(f"Failed to load portfolio data: {exc}")
     st.stop()
+
+# Historical PnL (used for VaR / CVaR + the new tab)
+try:
+    hist_pnl = compute_historical_pnl(portfolio)
+    var_95, cvar_95 = var_cvar(hist_pnl["PnL"], 0.95)
+    var_99, cvar_99 = var_cvar(hist_pnl["PnL"], 0.99)
+except Exception as exc:
+    st.warning(f"Could not compute historical VaR/CVaR: {exc}")
+    hist_pnl, var_95, cvar_95, var_99, cvar_99 = None, float("nan"), float("nan"), float("nan"), float("nan")
 
 # ── Sidebar: scenario controls ──────────────────────────────────────────────
 st.sidebar.header("🎛️ Scenario Controls")
@@ -332,7 +394,9 @@ with st.sidebar.expander("Custom tenor bumps (on top of above)"):
 st.sidebar.divider()
 if st.sidebar.button("🔄 Refresh market data"):
     fetch_treasury.clear()
+    fetch_yield_history.clear()
     build_portfolio.clear()
+    compute_historical_pnl.clear()
     st.rerun()
 
 # ── Compute scenario ────────────────────────────────────────────────────────
@@ -353,9 +417,20 @@ k3.metric("Total P&L", f"${pnl_total:,.0f}", delta=f"{pnl_pct:+.2f}%")
 k4.metric("Avg Mod. Duration", f"{avg_mod_dur:.2f} yrs")
 k5.metric("Portfolio DV01", f"${port_dv01:,.2f}", help="$ change per +1bp parallel move")
 
+# Second KPI row — Historical Risk (NEW)
+r1, r2, r3, r4 = st.columns(4)
+r1.metric("1M VaR (95%)", f"${var_95:,.2f}",
+          help="Historical 1-month loss at the 5th percentile of monthly P&L")
+r2.metric("1M CVaR (95%)", f"${cvar_95:,.2f}",
+          help="Average loss in the worst 5% of historical months")
+r3.metric("1M VaR (99%)", f"${var_99:,.2f}",
+          help="Historical 1-month loss at the 1st percentile of monthly P&L")
+r4.metric("1M CVaR (99%)", f"${cvar_99:,.2f}",
+          help="Average loss in the worst 1% of historical months")
+
 # ── Tabs ────────────────────────────────────────────────────────────────────
-tab_curve, tab_pnl, tab_port, tab_shock = st.tabs(
-    ["📈 Yield Curves", "🎯 Scenario P&L", "📋 Portfolio & Risk", "🔍 Curve Detail"]
+tab_curve, tab_pnl, tab_port, tab_shock, tab_var = st.tabs(
+    ["📈 Yield Curves", "🎯 Scenario P&L", "📋 Portfolio & Risk", "🔍 Curve Detail", "📉 Historical VaR / CVaR"]
 )
 
 # Tab 1 — Yield curve images
@@ -521,5 +596,88 @@ with tab_shock:
         f"Slope (steep/flat): **{slope:+d} bps**  •  "
         f"Total P&L: **${pnl_total:+,.0f} ({pnl_pct:+.2f}%)**"
     )
+
+# Tab 5 — Historical VaR / CVaR (NEW)
+with tab_var:
+    st.subheader("📉 Historical Monthly P&L — VaR & CVaR")
+    st.caption(
+        "Re-applies every historical month-over-month change in the 2Y/5Y/10Y/30Y "
+        "Treasury yields (from 2000 onward, sourced via FRED) to today's portfolio, "
+        "then summarises the tail of that simulated P&L distribution."
+    )
+
+    if hist_pnl is None or hist_pnl.empty:
+        st.warning("Historical P&L unavailable — check FRED connectivity.")
+    else:
+        # Headline metrics
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Months simulated", f"{len(hist_pnl):,}")
+        c2.metric("Worst single month", f"${hist_pnl['PnL'].min():,.2f}")
+        c3.metric("Best single month",  f"${hist_pnl['PnL'].max():,.2f}")
+        c4.metric("Mean monthly P&L",   f"${hist_pnl['PnL'].mean():,.2f}")
+
+        st.divider()
+
+        # ── Distribution histogram with VaR/CVaR markers ──
+        fig_hist = px.histogram(
+            hist_pnl.reset_index(), x="PnL", nbins=60,
+            title="Distribution of Historical Monthly P&L",
+            color_discrete_sequence=["#3b82f6"],
+        )
+        fig_hist.add_vline(x=var_95, line_dash="dash", line_color="#f59e0b",
+                           annotation_text=f"VaR 95%: ${var_95:,.0f}",
+                           annotation_position="top")
+        fig_hist.add_vline(x=cvar_95, line_dash="dash", line_color="#dc2626",
+                           annotation_text=f"CVaR 95%: ${cvar_95:,.0f}",
+                           annotation_position="top")
+        fig_hist.add_vline(x=var_99, line_dash="dot", line_color="#9333ea",
+                           annotation_text=f"VaR 99%: ${var_99:,.0f}",
+                           annotation_position="bottom")
+        fig_hist.update_layout(height=420, xaxis_title="Monthly P&L ($)", yaxis_title="Months")
+        st.plotly_chart(fig_hist, use_container_width=True)
+
+        # ── P&L time series ──
+        ts = hist_pnl.reset_index().sort_values("Date")
+        fig_ts = go.Figure()
+        fig_ts.add_trace(go.Scatter(
+            x=ts["Date"], y=ts["PnL"], mode="lines",
+            line=dict(width=1.2, color="#60a5fa"), name="Monthly P&L",
+        ))
+        fig_ts.add_hline(y=var_95,  line_dash="dash", line_color="#f59e0b",
+                         annotation_text="VaR 95%", annotation_position="right")
+        fig_ts.add_hline(y=cvar_95, line_dash="dash", line_color="#dc2626",
+                         annotation_text="CVaR 95%", annotation_position="right")
+        fig_ts.update_layout(
+            title="Monthly P&L Through Time (today's portfolio repriced under each historical yield move)",
+            xaxis_title="Month", yaxis_title="P&L ($)", height=400,
+        )
+        st.plotly_chart(fig_ts, use_container_width=True)
+
+        # ── Worst-month table ──
+        st.subheader("Worst 10 Months")
+        worst = hist_pnl.sort_values("PnL").head(10).copy()
+        worst.index = worst.index.strftime("%Y-%m")
+        st.dataframe(
+            worst.style.format({"PnL": "${:+,.2f}"})
+                 .background_gradient(subset=["PnL"], cmap="Reds_r"),
+            use_container_width=True,
+        )
+
+        # ── VaR / CVaR summary table ──
+        st.subheader("VaR / CVaR Summary")
+        summary = pd.DataFrame({
+            "Confidence":      ["95%", "99%"],
+            "VaR (1-month)":   [var_95,  var_99],
+            "CVaR (1-month)":  [cvar_95, cvar_99],
+        }).set_index("Confidence")
+        st.dataframe(
+            summary.style.format({"VaR (1-month)": "${:+,.2f}",
+                                  "CVaR (1-month)": "${:+,.2f}"}),
+            use_container_width=True,
+        )
+        st.caption(
+            "VaR = loss at the percentile cutoff.  "
+            "CVaR (Expected Shortfall) = average loss conditional on being below that cutoff."
+        )
 
 st.caption("Built with Streamlit  •  Data: FRED + Yahoo Finance  •  Bond math from mockPortfolio.py")

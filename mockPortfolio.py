@@ -11,10 +11,6 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.colors as mcolors
 
-
-
-
-
 fred = Fred(api_key="5e0c5fb26762b84a6b8eb806511522fe")
 treasury_series = {"2Y": "DGS2", "5Y": "DGS5", "10Y": "DGS10", "30Y": "DGS30"}
 
@@ -78,17 +74,21 @@ def getFinancials(ticker: str):     #get values from yfincance to compute credit
     fin = tk.financials         #income statement
     totalDebt = info.get("totalDebt", np.nan)       #totaldebt in balance sheet
     ebitda = info.get("ebitda",    np.nan)          #in inc statement
-    #Interest coverage = EBIT/Intrest expense        interest exp in incomestatement --> apple is empty
+    #Interest coverage = EBIT/Interest expense        interest exp in incomestatement --> apple is empty
 
     try:
         ebit = fin.loc["EBIT"].iloc[0]
         intExp = fin.loc["Interest Expense"].iloc[0]            
-        int_cov   = ebit / abs(intExp) if ebit and intExp != 0 else np.nan
+        int_cov = (ebit / abs(intExp) if not np.isnan(ebit) and not np.isnan(intExp) and intExp != 0
+    else np.nan
+    )
     except Exception:
         int_cov = np.nan
 
-    debt_Ebitda_ratio = totalDebt/ebitda if totalDebt and ebitda != 0 else np.nan 
-    
+    debt_Ebitda_ratio = (totalDebt / ebitda if not np.isnan(totalDebt) and not np.isnan(ebitda) and ebitda != 0
+    else np.nan
+    )
+
     return {"debt_Ebitda_ratio": debt_Ebitda_ratio, "int_coverage": int_cov}
 
 #Credit spread = debtEbitda(direct) + Interest Coverage(inverse) (bps)
@@ -177,7 +177,6 @@ if skipped:
 print(f"\n── Portfolio ({len(portfolio)} bonds) ───────────────────────────────────────")
 print(portfolio.to_string())
 
-
 #CALCULATE RISK METRICS AND VALUES
 
 def bond_price(face, coupon_rate, ytm, periods):
@@ -190,7 +189,6 @@ def bond_price(face, coupon_rate, ytm, periods):
     pv_face = face / (1 + y) ** n
     return pv_coupons + pv_face
  
- 
 def macaulay_duration(face, coupon_rate, ytm, periods):
     """Weighted average time to receive cash flows (in years)."""
     c = (coupon_rate / 100) * face / 2
@@ -201,7 +199,6 @@ def macaulay_duration(face, coupon_rate, ytm, periods):
     weighted_t = sum((t / 2) * (c / (1 + y) ** t) for t in range(1, n)) + (n / 2) * ((c + face) / (1 + y) ** n)
  
     return weighted_t / price
- 
  
 def convexity(face, coupon_rate, ytm, periods):
     """
@@ -218,7 +215,6 @@ def convexity(face, coupon_rate, ytm, periods):
     ) + (n * (n + 1)) * ((c + face) / (1 + y) ** (n + 2))
  
     return conv / (price * 4)   # divide by 4 to annualise semi-annual
- 
  
 def krd(face, coupon_rate, ytm, periods, key_tenors=(2, 5, 10, 30), bump=0.01):
     """
@@ -269,10 +265,8 @@ for ticker, row in portfolio.iterrows():
     })
  
 risk = pd.DataFrame(risk_rows).set_index("Ticker")
-
 merged = portfolio.join(risk[["Mod. Dur"]], how="left")
 
- 
 print("\n── Risk Metrics ─────────────────────────────────────────────────────────")
 print(risk.to_string())
  
@@ -282,9 +276,6 @@ print(f"  Total Market Value : ${risk['Price ($)'].sum():,.2f}")
 print(f"  Avg Modified Dur   : {risk['Mod. Dur'].mean():.3f} years")
 print(f"  Avg Convexity      : {risk['Convexity'].mean():.4f}")
 print(f"  Total DV01         : ${risk['DV01 ($)'].sum():.4f}  (portfolio $ loss per +1bp)")
-
-
-
 
 #VaR
 #take N historical days ago
@@ -315,9 +306,9 @@ print(f"1-Month CVaR/Expected Shortfall: ${CVaR_95:,.2f}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MACRO VIEW: Rates steady/higher, spreads widen, energy outperforms due to war
+# MACRO VIEW: Rates stay steady/higher, spreads widen, energy outperforms due to war
 # Weights: 40% Duration + 40% Credit Resilience + 20% Sector Tailwind
-# Score: 1 (worst) → 10 (best) per factor. Higher = better BUY under this view
+# Score: 1-10 worst to best per factor. Higher = better BUY under my assumption
 # ─────────────────────────────────────────────────────────────────────────────
 
 WEIGHTS = {"duration": 0.40, "credit": 0.40, "sector": 0.20}
@@ -385,7 +376,6 @@ def credit_rating(score: float) -> str:
         elif score > 5.0: return "B"
         else:             return "CCC"
 
-
 scores = []
 for ticker, bond in merged.iterrows():
     de  = bond["Debt/EBITDA"]
@@ -435,7 +425,16 @@ print(scores_df[scores_df["Verdict"] == "AVOID"][["Name","Sector","Composite Sco
 
 
 
-###VISUALS
+# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+###GRAPHING
 scores_df = scores_df.join(risk[["Convexity"]], how="left")
 scores_df = scores_df.join(portfolio[["Debt/EBITDA", "Int. Coverage"]], how="left", rsuffix="_p")
  

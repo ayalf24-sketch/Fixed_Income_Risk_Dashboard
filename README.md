@@ -49,6 +49,7 @@ Corporate yields were constructed as: YTM = Matched Treasury Yield + Credit Spre
 The credit spread was derived from each company's real financials pulled from Yahoo Finance (yfinance) — specifically Debt/EBITDA and Interest Coverage ratio. Higher leverage and lower coverage = wider spread
 
 Risk Metrics
+
 Five risk metrics were computed for every bond in the portfolio:
 
 Price — the present value of all future cash flows (coupons + face value) discounted at the bond's yield to maturity. This is the fundamental bond pricing equation. Price and yield always move in opposite directions.

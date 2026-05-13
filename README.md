@@ -94,6 +94,7 @@ Link: https://fixedincomeriskdashboard-fhasrhbwnw8799rzwfsrjh.streamlit.app/
 # GRAPHS
 
 Graph 1 — Leverage vs Interest Coverage
+![Leverage vs Int Coverage](.png)
 
 
 

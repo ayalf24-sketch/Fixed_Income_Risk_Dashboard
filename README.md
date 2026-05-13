@@ -9,7 +9,7 @@ I built this project to gain a hands-on introduction to fixed income markets. St
 The project is written entirely in Python using FRED API data, Yahoo Finance financials, and standard data science libraries (pandas, numpy, matplotlib, seaborn)
 
 # PROJECT PREVIEW
-- Include a heatmap image
+![Credit Scoring](graphD_heatmap.png)
 
 
 # METHODOLOGY
@@ -21,38 +21,51 @@ A key design decision here was using DFF (daily effective fed funds) rather than
 
 
 Step 2 — Yield Curve Visualization & Spread Analysis
-- include image
+
+![Yield Curves](yield_analysis.png)
+
+![Yield Curves](currentYeildCurve.png)
+
+
 
 The next thing I did was visualize the treasury yield data. Four plots were produced:
 
 Historical yield time series (2010–present) — all four tenors plotted together. You can visually see the 2022 tightening cycle, where the Fed raised rates from near-zero to 5%+ in under two years, the fastest hiking cycle in modern history.
 
-2Y–10Y and 2Y–30Y spreads with inversion shading — the red-shaded regions mark periods where the spread went negative, meaning short-term rates exceeded long-term rates. This is called a yield curve inversion and has historically preceded every U.S. recession since 1970. The 2022–2023 inversion was one of the deepest and longest on record.
+2Y–10Y and 2Y–30Y spreads with inversion shading: the red-shaded regions mark periods where the spread went negative, meaning short-term rates exceeded long-term rates. This is called a yield curve inversion and has historically preceded every U.S. recession since 1970. The 2022–2023 inversion was one of the deepest and longest on record.
 
 The 10Y-30Y spread represents the final plot purely for semblance's sake.
 To calculate the spread, the formula is:
 df["2Y10Y"] = df["10Y"] - df["2Y"] & df["2Y30Y"] = df["30Y"] - df["2Y"]. Negative values represent an inversion.
 
 
-Step 3 — Mock Bond Portfolio & Risk Metrics
+# Step 3 — Mock Bond Portfolio & Risk Metrics
 Portfolio Construction
+
 A portfolio of 35 corporate bonds was constructed across four sectors — Industrials, Energy, Consumer Staples, and Technology — plus four risk-free U.S. Treasury bonds (2Y, 5Y, 10Y, 30Y). Roughly half the portfolio consists of strong investment-grade names (Microsoft, ExxonMobil, Procter & Gamble, Caterpillar), and the other half consists of leveraged, distressed, or declining names (Boeing, Walgreens, DISH/EchoStar, Kraft Heinz). This contrast was important for making the risk metrics and macro scoring meaningful.
+
 Corporate yields were constructed as: YTM = Matched Treasury Yield + Credit Spread
 
 The credit spread was derived from each company's real financials pulled from Yahoo Finance (yfinance) — specifically Debt/EBITDA and Interest Coverage ratio. Higher leverage and lower coverage = wider spread
 
 Risk Metrics
 Five risk metrics were computed for every bond in the portfolio:
+
 Price — the present value of all future cash flows (coupons + face value) discounted at the bond's yield to maturity. This is the fundamental bond pricing equation. Price and yield always move in opposite directions.
+
 Macaulay Duration — the weighted average time until you receive your cash flows back, measured in years. A 10Y zero-coupon bond has a duration of exactly 10. A 10Y bond paying a 6% coupon has a shorter duration because you are receiving cash every six months, pulling your average payback date forward.
+
 Modified Duration — Macaulay Duration divided by (1 + y/2). This is the actionable risk number: it tells you the approximate percentage change in price for a 1% move in yield. A bond with a Modified Duration of 8 loses roughly 8% of its value if rates rise 1%.
+
 Convexity — the second-order correction to Modified Duration. The price/yield relationship is a curve, not a straight line. Convexity captures the curvature: for large yield moves, convexity means price gains are larger than duration predicts and price losses are smaller. All else equal, higher convexity is always better for the bondholder.
+
 DV01 (Dollar Value of 01) — Modified Duration expressed in dollar terms per basis point. If your portfolio has a total DV01 of −$6.63, a +1bp move in rates costs the portfolio $6.63. A +100bp move costs $663. This is the metric traders actually use day-to-day because it converts abstract duration into concrete P&L.
+
 Key Rate Duration (KRD) — unlike Modified Duration, which assumes the whole yield curve shifts in parallel, KRD measures sensitivity to a move at one specific tenor while holding the rest of the curve constant. A 10Y bond only has KRD exposure at the 10Y point. This metric becomes critical when doing scenario analysis involving curve steepeners and flatteners rather than parallel shifts.
 
 
 
-Step 4 — Historical Value at Risk (VaR)
+# Step 4 — Historical Value at Risk (VaR)
 VaR was computed using the historical simulation method. Rather than assuming yield changes are normally distributed (parametric VaR) or drawing random scenarios (Monte Carlo), we took the actual history of monthly yield changes from 2000 to present — roughly 300 real months including 2008 and 2020 — and replayed each month's yield moves on the current portfolio.
 For each historical month, the yield change at each tenor (2Y, 5Y, 10Y, 30Y) was applied to every bond matched to that tenor, and the resulting P&L was recorded. After 300 simulations, the 5th percentile of the P&L distribution is the 1 month 95% VaR: the portfolio loss that was exceeded in only 5% of historical months
 
@@ -60,7 +73,7 @@ We also computed CVaR (Conditional VaR, also called Expected Shortfall) — the 
 Starting from 2000 rather than 2010 was a deliberate choice. The 2008 financial crisis and the 2000–2002 recession are exactly the kind of extreme events that VaR is supposed to capture. Excluding them would have understated the true tail risk of the portfolio.
 
 
-Step 5 — Macro View & Bond Scoring System
+# Step 5 — Macro View & Bond Scoring System
 The Macro View
 As of the project date, the macroeconomic environment was characterized by three concurrent pressures: geopolitical risk from the Iran conflict driving energy price surges, inflation running above trend for the third consecutive year, and a Federal Reserve caught between political pressure from the administration for rate cuts and the data-driven reality that inflation had not been sufficiently tamed. The base case was that the Fed would hold rates steady or raise them, with rate cuts unlikely in the near term.
 This thesis has three direct implications for bond selection:
@@ -78,10 +91,15 @@ Sector Tailwind Score (20% weight) — a manual overlay encoding the macro view 
 Credit Ratings
 Composite scores were mapped to a shadow credit rating system:
 Score  Rating  Verdict
+
 > 8.0  AAA      BUY
+
 > 7.0  AA       BUY
+
 > 6.0  BBB      HOLD
+
 > 5.0  B        HOLD
+
 ≤ 5.0  CCC      AVOID
 
 

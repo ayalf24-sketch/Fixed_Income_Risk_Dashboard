@@ -94,7 +94,25 @@ Link: https://fixedincomeriskdashboard-fhasrhbwnw8799rzwfsrjh.streamlit.app/
 # GRAPHS
 
 Graph 1 — Leverage vs Interest Coverage
-![Leverage vs Int Coverage](.png)
+![Leverage vs Int Coverage](graph1_leverage_coverage.png)
+Two side-by-side horizontal bar charts ranking all 35 corporate bonds.
+This graph shows important data for credit analysis. Which companies have risky debt, which can comfortably service their debt?
+
+Graph 2 — Full Scoring Heatmap 
+![Credit Scoring](graphD_heatmap.png)
+
+All bonds are ranked top to bottom by composite score under my macro assumption. Each row shows all four scoring components — Duration Score, Credit Score, Sector Score, Composite Score — on a red-to-green color scale.
+
+Graph 3 — DV01 & Convexity vs Yield
+![DV01 & Convexity vs Yield](graph_dv01_convexity_vs_yield.png)
+
+The top panel plots DV01 absolute value against YTM for every bond. Bonds that are both high-yield and high-DV01 are the most exposed under this macro view — they offer a high yield as compensation for credit risk but will lose the most in dollar terms if rates rise. The bottom panel plots convexity against YTM. Higher convexity bonds gain more than they lose for a given yield move, which is an asymmetric benefit that pure duration analysis misses.
+
+Graph 5 — Portfolio Summary Heatmap + Aggregates
+![Portfolio Summary](graph_portfolio_summary.png)
+
+The full portfolio in one view, showing all bond characteristics. 
+The right panel shows all portfolio-level aggregates: total market value, average modified duration, average convexity, total DV01, 1-month 95% VaR, CVaR, and scenario P&L for four rate shocks.
 
 
 
@@ -107,7 +125,6 @@ Duration is the dominant risk factor in a rising rate environment.
 Credit spreads and rate risk are compounding, not independent.
 
 Energy is the macro-consistent outlier.
-
 
 
 Disclaimer
